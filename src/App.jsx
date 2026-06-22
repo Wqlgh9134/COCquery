@@ -1336,7 +1336,7 @@ function App() {
 
     const playerStats = {}
     const totalRounds = ourWars.length
-    allWars.forEach(war => {
+    allWars.forEach((war, warIndex) => {
       const isOurClan = war.clan?.tag === ourClanTag
       const ourClanData = isOurClan ? war.clan : war.opponent
       const members = ourClanData?.members || []
@@ -1352,6 +1352,7 @@ function App() {
             totalDestruction: 0,
             warsParticipated: 0,
             totalAppearances: 0,
+            perRound: new Array(totalRounds).fill(undefined),
           }
         }
         if (isActiveOrEnded) {
@@ -1360,6 +1361,14 @@ function App() {
         const attacks = member.attacks || []
         if (attacks.length > 0) {
           playerStats[member.tag].warsParticipated += 1
+          if (isActiveOrEnded) {
+            playerStats[member.tag].perRound[warIndex] = attacks[0].destructionPercentage || 0
+          }
+        } else if (isActiveOrEnded) {
+          playerStats[member.tag].perRound[warIndex] = -1
+        } else {
+          // 准备中轮次，标记上场玩家
+          playerStats[member.tag].perRound[warIndex] = -2
         }
         attacks.forEach(atk => {
           playerStats[member.tag].totalStars += atk.stars || 0
@@ -1438,6 +1447,11 @@ function App() {
                 <tr className="border-b border-white/10">
                   <th className="text-left py-3 px-4 text-gray-400 font-medium">#</th>
                   <th className="text-left py-3 px-4 text-gray-400 font-medium">玩家</th>
+                  {ourWars.map((_, ri) => (
+                    <th key={ri} className="text-center py-3 px-4 text-gray-400 font-medium text-[10px] w-7">
+                      {ri + 1}
+                    </th>
+                  ))}
                   <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setLeagueSort({ field: 'totalStars', order: leagueSort.field === 'totalStars' && leagueSort.order === 'desc' ? 'asc' : 'desc' })}>
                     总星级 {leagueSort.field === 'totalStars' ? (leagueSort.order === 'desc' ? '↓' : '↑') : ''}
                   </th>
@@ -1457,6 +1471,43 @@ function App() {
                       <p className="font-medium hover:text-primary transition-colors">{p.name}</p>
                       <p className="text-gray-400 text-xs font-mono">{p.tag}</p>
                     </td>
+                    {ourWars.map((_, ri) => {
+                      const val = p.perRound?.[ri]
+                      // 未上场 → 留空单元格
+                      if (val === undefined) {
+                        return <td key={ri} className="py-3 px-4 text-center" />
+                      }
+                      let borderColor, bgStyle, title
+                      if (val === -2) {
+                        // 准备中（上场但未开打）
+                        borderColor = '#6b7280'
+                        bgStyle = '#374151'
+                        title = `第${ri+1}场: 准备中`
+                      } else if (val <= 0) {
+                        borderColor = '#ef4444'
+                        bgStyle = 'transparent'
+                        title = val === -1 ? `第${ri+1}场: 未进攻` : `第${ri+1}场: 0%`
+                      } else {
+                        // 100% → 绿, <100% → 黄→橙→红
+                        const hue = val >= 100 ? 120 : (val / 100) * 60
+                        const color = `hsl(${hue}, 100%, 50%)`
+                        borderColor = color
+                        bgStyle = `linear-gradient(to top, ${color} ${val}%, transparent ${val}%)`
+                        title = `第${ri+1}场: ${val.toFixed(0)}%`
+                      }
+                      return <td key={ri} className="py-3 px-4 text-center">
+                        <span className="inline-flex items-center justify-center w-6 h-6 rounded border-2 text-xs font-bold text-white"
+                          style={{
+                            borderColor,
+                            background: bgStyle,
+                            textShadow: '0 0 4px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.7), 0 0 1px #000'
+                          }}
+                          title={title}
+                        >
+                          {ri + 1}
+                        </span>
+                      </td>
+                    })}
                     <td className="py-3 px-4 text-center">
                       <span className="inline-flex items-center gap-1 font-bold text-primary">
                         <span className="text-secondary"><Icons.Star /></span>
