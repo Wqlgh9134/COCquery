@@ -1109,65 +1109,90 @@ function App() {
       </div>
 
       <div className="card">
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-          <span className="text-primary"><Icons.Users /></span>
-          成员列表
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <span className="text-primary"><Icons.Users /></span>
+            成员列表
+          </h2>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-gray-400">共 <span className="text-white font-bold">{clanData.members}</span> 人</span>
+            <span className="text-gray-600">|</span>
+            <span className="text-gray-400">
+              首领 <span className="text-secondary font-bold">{clanData.memberList.filter(m => m.role === 'leader').length}</span>
+              · 副首 <span className="text-danger font-bold">{clanData.memberList.filter(m => m.role === 'coLeader').length}</span>
+              · 长老 <span className="text-primary font-bold">{clanData.memberList.filter(m => m.role === 'admin').length}</span>
+            </span>
+          </div>
+        </div>
         <div className="overflow-x-auto">
-          <table>
+          <table className="w-full min-w-[640px]">
             <thead>
-              <tr className="border-b border-white/10">
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium">玩家</th>
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'role', order: memberSort.field === 'role' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
-                    职位 {memberSort.field === 'role' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
-                  </th>
-                  <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'level', order: memberSort.field === 'level' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
-                    等级 {memberSort.field === 'level' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
-                  </th>
-                  <th className="text-right py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'trophies', order: memberSort.field === 'trophies' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
-                    杯数 {memberSort.field === 'trophies' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
-                  </th>
-                  <th className="text-right py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'donations', order: memberSort.field === 'donations' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
-                    捐兵/收兵 {memberSort.field === 'donations' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
-                  </th>
-                </tr>
+              <tr className="border-b border-white/10 sticky top-0 bg-card z-10">
+                <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider">#</th>
+                <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider">玩家</th>
+                <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider cursor-pointer hover:text-white transition-all select-none" onClick={() => setMemberSort({ field: 'role', order: memberSort.field === 'role' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                  职位 {memberSort.field === 'role' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                </th>
+                <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider cursor-pointer hover:text-white transition-all select-none" onClick={() => setMemberSort({ field: 'level', order: memberSort.field === 'level' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                   等级 {memberSort.field === 'level' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                 </th>
+                 <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider cursor-pointer hover:text-white transition-all select-none" onClick={() => setMemberSort({ field: 'trophies', order: memberSort.field === 'trophies' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                   杯数 {memberSort.field === 'trophies' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                 </th>
+                 <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider cursor-pointer hover:text-white transition-all select-none" onClick={() => setMemberSort({ field: 'donations', order: memberSort.field === 'donations' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                   捐兵/收兵 {memberSort.field === 'donations' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                 </th>
+              </tr>
             </thead>
             <tbody>
-              {sortMembers(clanData.memberList).map((member, index) => (<tr key={member.tag} onClick={() => handleViewPlayer(member.tag)} className="border-b border-white/5 hover:bg-white/5 transition-all cursor-pointer">
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-gray-500 w-6">{index + 1}</span>
-                    <div>
-                      <p className="font-medium hover:text-primary transition-colors">{member.name}</p>
-                      <p className="text-gray-400 text-sm font-mono">{member.tag}</p>
+              {sortMembers(clanData.memberList).map((member, index) => (
+                <tr key={member.tag} onClick={() => handleViewPlayer(member.tag)} className="border-b border-white/5 hover:bg-white/[0.04] even:bg-white/[0.02] transition-all cursor-pointer group">
+                  <td className="py-2.5 px-3">
+                    <span className="text-gray-500 text-sm font-mono">{index + 1}</span>
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/30 to-blue-800/30 border border-white/10 flex items-center justify-center text-xs font-bold text-primary group-hover:border-primary/30 transition-all flex-shrink-0">
+                        {member.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate max-w-[160px] group-hover:text-primary transition-colors">{member.name}</p>
+                        <p className="text-gray-500 text-xs font-mono truncate">{member.tag}</p>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td className="py-3 px-4">
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${member.role === 'leader' ? 'bg-secondary/20 text-secondary' :
-                    member.role === 'coLeader' ? 'bg-danger/20 text-danger' :
-                    member.role === 'admin' ? 'bg-primary/20 text-primary' :
-                    'bg-gray-600/20 text-gray-400'}`}>
-                    {member.role === 'leader' && <Icons.Crown />}
-                    {getRoleName(member.role)}
-                  </span>
-                </td>
-                <td className="py-3 px-4 text-center">
-                  <span className="inline-flex items-center gap-1">
-                    <span className="text-primary"><Icons.Star /></span>
-                    {member.expLevel}
-                  </span>
-                </td>
-                <td className="py-3 px-4 text-right font-mono">
-                  <span className="mr-1">🏆</span>
-                  {member.trophies}
-                </td>
-                <td className="py-3 px-4 text-right">
-                  <span className="text-primary">{member.donations}</span>
-                  <span className="text-gray-500 mx-1">/</span>
-                  <span className="text-success">{member.donationsReceived}</span>
-                </td>
-              </tr>))}
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                      member.role === 'leader' ? 'bg-secondary/15 text-secondary' :
+                      member.role === 'coLeader' ? 'bg-danger/15 text-danger' :
+                      member.role === 'admin' ? 'bg-primary/15 text-primary' :
+                      'bg-gray-600/10 text-gray-400'
+                    }`}>
+                      {member.role === 'leader' && <Icons.Crown />}
+                      {getRoleName(member.role)}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-left">
+                     <span className="inline-flex items-center gap-1 text-sm">
+                       <span className="text-yellow-500"><Icons.Star /></span>
+                       <span className="font-mono">{member.expLevel}</span>
+                     </span>
+                   </td>
+                   <td className="py-2.5 px-3 text-left">
+                     <span className="inline-flex items-center gap-1 text-sm font-mono">
+                       <span className="text-lg leading-none">🏆</span>
+                       <span>{member.trophies.toLocaleString()}</span>
+                     </span>
+                   </td>
+                   <td className="py-2.5 px-3 text-left">
+                     <div className="flex items-center gap-2 text-sm">
+                       <span className="text-primary font-medium">{member.donations.toLocaleString()}</span>
+                       <span className="text-gray-600">/</span>
+                       <span className="text-green-400 font-medium">{member.donationsReceived.toLocaleString()}</span>
+                     </div>
+                   </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -1567,8 +1592,8 @@ function App() {
                       <span className="text-gray-500 mx-1">:</span>
                       <span className="font-bold text-danger">{war.opponent?.stars || 0}</span>
                     </div>
-                    <span className={`px-2 py-1 rounded text-xs ${war.state === 'war' ? 'bg-success/20 text-success' : war.state === 'preparation' ? 'bg-primary/20 text-primary' : 'bg-gray-600/20 text-gray-400'}`}>
-                      {war.state === 'war' ? '进行中' : war.state === 'preparation' ? '准备中' : '已结束'}
+                    <span className={`px-2 py-1 rounded text-xs ${war.state === 'war' || war.state === 'inWar' ? 'bg-success/20 text-success' : war.state === 'preparation' ? 'bg-primary/20 text-primary' : 'bg-gray-600/20 text-gray-400'}`}>
+                      {war.state === 'war' || war.state === 'inWar' ? '进行中' : war.state === 'preparation' ? '准备中' : '已结束'}
                     </span>
                   </div>
                 </div>
