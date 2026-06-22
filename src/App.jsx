@@ -1365,7 +1365,8 @@ function App() {
             playerStats[member.tag].perRound[warIndex] = attacks[0].destructionPercentage || 0
           }
         } else if (isActiveOrEnded) {
-          playerStats[member.tag].perRound[warIndex] = -1
+          // 区分进行中未攻击 vs 已结束未攻击
+          playerStats[member.tag].perRound[warIndex] = (war.state === 'inWar' || war.state === 'war') ? -3 : -1
         } else {
           // 准备中轮次，标记上场玩家
           playerStats[member.tag].perRound[warIndex] = -2
@@ -1483,6 +1484,11 @@ function App() {
                         borderColor = '#6b7280'
                         bgStyle = '#374151'
                         title = `第${ri+1}场: 准备中`
+                      } else if (val === -3) {
+                        // 战斗进行中，还未攻击
+                        borderColor = '#3b82f6'
+                        bgStyle = 'transparent'
+                        title = `第${ri+1}场: 进行中，未攻击`
                       } else if (val <= 0) {
                         borderColor = '#ef4444'
                         bgStyle = 'transparent'
@@ -1515,7 +1521,13 @@ function App() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`font-bold ${p.warsParticipated === p.totalAppearances ? 'text-success' : 'text-danger'}`}>
+                      <span className={`font-bold ${
+                        p.warsParticipated === p.totalAppearances
+                          ? 'text-success'
+                          : p.perRound?.some(v => v === -3)
+                            ? 'text-blue-400'
+                            : 'text-danger'
+                      }`}>
                         {p.warsParticipated}/{p.totalAppearances}
                       </span>
                     </td>
