@@ -688,10 +688,10 @@ function App() {
   }
 
   const parseJSONResponse = async (response) => {
+    const text = await response.text()
     try {
-      return await response.json()
+      return JSON.parse(text)
     } catch {
-      const text = await response.text()
       if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
         throw new Error('服务器返回异常，请检查后端代理服务是否正常运行')
       }
