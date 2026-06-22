@@ -213,12 +213,10 @@ const LOCAL_IMAGE_MAP = {
   'Siege Barracks': 'Siege_Barracks_thumb.webp',
   'Flame Flinger': 'Flame_Flinger_thumb.webp',
   'Troop Launcher': 'Troop_Launcher_thumb.webp',
-  'Rocket Balloon': 'Rocket_Balloon_thumb.webp',
   'Sky Wagon': 'Sky_Wagon_thumb.webp',
   'Action Figure': 'Action_Figure_thumb.webp',
   'Angry Jelly': 'Angry_Jelly_thumb.webp',
   'Battle Machine': 'Battle_Machine_thumb.webp',
-  'Super Battle Ram': 'Super_Battle_Ram_thumb.webp',
   // 夜世界兵种
   'Raged Barbarian': 'Raged_Barbarian_thumb.webp',
   'Sneaky Archer': 'Sneaky_Archer_thumb.webp',
@@ -295,19 +293,8 @@ const Icons = {
   TrendingUp: () => (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
   </svg>),
-  Download: () => (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-  </svg>),
-  Image: () => (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-  </svg>),
-}
 
-const StarDisplay = ({ stars, maxStars = 3 }) => (<div className="flex items-center gap-0.5">
-  {Array.from({ length: maxStars }).map((_, i) => i < stars
-      ? <span key={i} className="text-secondary"><Icons.Star /></span>
-      : <span key={i}><Icons.StarEmpty /></span>)}
-</div>)
+}
 
 const LoadingSpinner = ({ message = '加载中...' }) => (<div className="flex flex-col items-center justify-center py-12">
   <div className="relative w-16 h-16">
@@ -1334,6 +1321,17 @@ function App() {
     const losses = finishedWars.filter(w => (w.ourClan?.stars || 0) < (w.opponent?.stars || 0)).length
     const draws = finishedWars.filter(w => (w.ourClan?.stars || 0) === (w.opponent?.stars || 0)).length
 
+    // 获取当前战斗日（进行中的轮次）的已进攻数/总人数
+    const currentRoundIdx = ourWars.findIndex(w => w.state === 'war' || w.state === 'inWar')
+    let currentRoundAttacks = 0
+    let currentRoundTotal = 0
+    if (currentRoundIdx >= 0) {
+      const currentWar = ourWars[currentRoundIdx]
+      const members = currentWar.ourClan?.members || []
+      currentRoundTotal = members.length
+      currentRoundAttacks = members.filter(m => (m.attacks || []).length > 0).length
+    }
+
     const playerStats = {}
     const totalRounds = ourWars.length
     allWars.forEach((war, warIndex) => {
@@ -1412,7 +1410,7 @@ function App() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-dark/50 rounded-xl p-4 text-center">
             <p className="text-3xl font-bold text-primary">{totalStars}</p>
             <p className="text-gray-400 text-sm">总星级</p>
@@ -1434,6 +1432,12 @@ function App() {
               <span className="text-danger">{losses}</span>
             </p>
             <p className="text-gray-400 text-sm">胜-平-负</p>
+          </div>
+          <div className="bg-dark/50 rounded-xl p-4 text-center">
+            <p className="text-3xl font-bold text-blue-400">
+              {currentRoundIdx >= 0 ? `${currentRoundAttacks}/${currentRoundTotal}` : '-'}
+            </p>
+            <p className="text-gray-400 text-sm">今日进攻</p>
           </div>
         </div>
 
