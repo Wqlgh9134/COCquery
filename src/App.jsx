@@ -687,6 +687,18 @@ function App() {
     })
   }
 
+  const parseJSONResponse = async (response) => {
+    try {
+      return await response.json()
+    } catch {
+      const text = await response.text()
+      if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+        throw new Error('服务器返回异常，请检查后端代理服务是否正常运行')
+      }
+      throw new Error(`响应数据格式错误，无法解析：${text.slice(0, 100)}`)
+    }
+  }
+
   const fetchClanInfo = async (tag) => {
     const cacheKey = `coc_cache_clan_${tag}`
     const cached = localStorage.getItem(cacheKey)
@@ -710,7 +722,7 @@ function App() {
     if (response.status === 404) throw new Error('未找到该部落')
     if (!response.ok) throw new Error(`请求失败: ${response.status}`)
 
-    const data = await response.json()
+    const data = await parseJSONResponse(response)
     localStorage.setItem(cacheKey, JSON.stringify({ data, timestamp: Date.now() }))
 
     return data
@@ -729,7 +741,7 @@ function App() {
       throw new Error(`请求失败: ${response.status}`)
     }
 
-    return response.json()
+    return parseJSONResponse(response)
   }
 
   const fetchLeagueGroup = async (tag) => {
@@ -745,7 +757,7 @@ function App() {
       throw new Error(`请求失败: ${response.status}`)
     }
 
-    return response.json()
+    return parseJSONResponse(response)
   }
 
   const fetchWarRound = async (warTag, signal) => {
@@ -762,7 +774,7 @@ function App() {
       throw new Error(`请求失败: ${response.status}`)
     }
 
-    return response.json()
+    return parseJSONResponse(response)
   }
 
   const fetchPlayerInfo = async (tag) => {
@@ -774,7 +786,7 @@ function App() {
     })
 
     if (!response.ok) throw new Error(`请求失败: ${response.status}`)
-    return response.json()
+    return parseJSONResponse(response)
   }
 
   const handleAddClan = async () => {
