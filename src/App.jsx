@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const BASE_URL = '/api/v1'
 
@@ -383,7 +383,7 @@ const Header = ({ onSettingsClick }) => (<header className="bg-card border-b bor
   </div>
 </header>)
 
-const ClanCard = ({ clan, onRemove, onView, onWar, onLeague }) => (<div className="card group hover:border-primary/50 transition-all">
+const ClanCard = ({ clan, onRemove, onView }) => (<div className="card group hover:border-primary/50 transition-all cursor-pointer" onClick={onView}>
   <div className="flex items-start justify-between mb-4">
     <div className="flex items-center gap-3">
       <div className="w-12 h-12 bg-gradient-to-br from-primary to-blue-700 rounded-lg flex items-center justify-center">
@@ -395,25 +395,13 @@ const ClanCard = ({ clan, onRemove, onView, onWar, onLeague }) => (<div classNam
       </div>
     </div>
 
-    <button onClick={onRemove} className="p-2 text-gray-400 hover:text-danger hover:bg-danger/10 rounded-lg transition-all opacity-0 group-hover:opacity-100" title="删除">
+    <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-2 text-gray-400 hover:text-danger hover:bg-danger/10 rounded-lg transition-all opacity-0 group-hover:opacity-100" title="删除">
       <Icons.Trash />
-    </button>
-  </div>
-
-  <div className="flex gap-2 mt-4">
-    <button onClick={onView} className="flex-1 btn-primary text-sm py-2 flex items-center justify-center gap-2">
-      <Icons.Users /> 详情
-    </button>
-    <button onClick={onWar} className="flex-1 bg-secondary/20 hover:bg-secondary text-secondary px-4 py-2 rounded-lg font-medium transition-all text-sm flex items-center justify-center gap-2">
-      <Icons.Swords /> 部落战
-    </button>
-    <button onClick={onLeague} className="flex-1 bg-success/20 hover:bg-success text-success px-4 py-2 rounded-lg font-medium transition-all text-sm flex items-center justify-center gap-2">
-      <Icons.Trophy /> 联赛
     </button>
   </div>
 </div>)
 
-const PlayerCard = ({ player, onRemove, onView }) => (<div className="card group hover:border-primary/50 transition-all">
+const PlayerCard = ({ player, onRemove, onView }) => (<div className="card group hover:border-primary/50 transition-all cursor-pointer" onClick={onView}>
   <div className="flex items-center justify-between">
     <div className="flex items-center gap-3">
       <div className="w-12 h-12 bg-gradient-to-br from-primary to-blue-700 rounded-lg flex items-center justify-center">
@@ -425,10 +413,7 @@ const PlayerCard = ({ player, onRemove, onView }) => (<div className="card group
       </div>
     </div>
     <div className="flex items-center gap-2">
-      <button onClick={onView} className="btn-primary text-sm py-2 px-4 flex items-center gap-2">
-        <Icons.Search /> 查看
-      </button>
-      <button onClick={onRemove} className="p-2 text-gray-400 hover:text-danger hover:bg-danger/10 rounded-lg transition-all" title="删除">
+      <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="p-2 text-gray-400 hover:text-danger hover:bg-danger/10 rounded-lg transition-all" title="删除">
         <Icons.Trash />
       </button>
     </div>
@@ -655,8 +640,33 @@ function App() {
   const [warData, setWarData] = useState(null)
   const [leagueData, setLeagueData] = useState(null)
   const [memberSort, setMemberSort] = useState({ field: 'role', order: 'desc' })
+  const [leagueSort, setLeagueSort] = useState({ field: 'totalStars', order: 'desc' })
+  const [clanActivities, setClanActivities] = useState({})
   const [playerData, setPlayerData] = useState(null)
   const [showPlayerModal, setShowPlayerModal] = useState(false)
+
+  // 页面加载时自动检查所有已保存部落的战争/联赛状态
+  useEffect(() => {
+    if (!apiKey || savedClans.length === 0) return
+    const clans = [...savedClans]
+
+    const checkAllClans = async () => {
+      const results = {}
+      await Promise.allSettled(clans.map(async (clan) => {
+        const [warData, leagueData] = await Promise.all([
+          fetchClanWar(clan.tag),
+          fetchLeagueGroup(clan.tag)
+        ])
+        results[clan.tag] = {
+          warActive: warData && warData.state !== 'notInWar' && warData.state !== 'warEnded',
+          leagueActive: !!leagueData,
+        }
+      }))
+      setClanActivities(prev => ({ ...prev, ...results }))
+    }
+
+    checkAllClans()
+  }, [apiKey, savedClans])
 
   const roleOrder = { 'leader': 4, 'coLeader': 3, 'admin': 2, 'member': 1 }
 
@@ -806,10 +816,21 @@ function App() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchClanInfo(clan.tag)
+      const [data, warData, leagueData] = await Promise.all([
+        fetchClanInfo(clan.tag),
+        fetchClanWar(clan.tag).catch(() => null),
+        fetchLeagueGroup(clan.tag).catch(() => null),
+      ])
       setClanData(data)
       setSelectedClan(clan)
       setCurrentView('clan-detail')
+      setClanActivities(prev => ({
+        ...prev,
+        [clan.tag]: {
+          warActive: warData && warData.state !== 'notInWar' && warData.state !== 'warEnded',
+          leagueActive: !!leagueData,
+        }
+      }))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -825,6 +846,10 @@ function App() {
       setWarData(data)
       setSelectedClan(clan)
       setCurrentView('war')
+      setClanActivities(prev => ({
+        ...prev,
+        [clan.tag]: { ...prev[clan.tag], warActive: data && data.state !== 'notInWar' }
+      }))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -851,6 +876,10 @@ function App() {
       }
       setSelectedClan(clan)
       setCurrentView('league')
+      setClanActivities(prev => ({
+        ...prev,
+        [clan.tag]: { ...prev[clan.tag], leagueActive: !!data }
+      }))
     } catch (err) {
       if (err.name !== 'AbortError') {
         setError(err.message)
@@ -963,7 +992,7 @@ function App() {
       {savedClans.length > 0 ? (<div>
         <h2 className="text-xl font-bold mb-4">已保存的部落</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {savedClans.map((clan) => (<ClanCard key={clan.tag} clan={clan} onRemove={() => handleRemoveClan(clan.tag)} onView={() => handleViewClan(clan)} onWar={() => handleViewWar(clan)} onLeague={() => handleViewLeague(clan)}/>))}
+          {savedClans.map((clan) => (<ClanCard key={clan.tag} clan={clan} onRemove={() => handleRemoveClan(clan.tag)} onView={() => handleViewClan(clan)}/>))}
         </div>
       </div>) : (<div className="card text-center py-12">
         <p className="text-gray-400">
@@ -1047,69 +1076,62 @@ function App() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <button onClick={() => handleViewWar(selectedClan)} className="card hover:border-secondary/50 transition-all text-left">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-secondary/20 rounded-xl text-secondary">
-              <Icons.Swords />
-            </div>
-            <div>
-              <h3 className="font-bold text-lg">部落战</h3>
-              <p className="text-gray-400 text-sm">查看当前部落战详情和对位分析</p>
-            </div>
-          </div>
-        </button>
+        {(() => {
+          const activities = clanActivities[selectedClan?.tag] || {}
+          const warDisabled = !activities.warActive || activities.leagueActive
+          const leagueDisabled = !activities.leagueActive || activities.warActive
+          const noActivity = !activities.warActive && !activities.leagueActive
+          return (<>
+            <button onClick={() => handleViewWar(selectedClan)} disabled={warDisabled} className={`card text-left transition-all ${warDisabled ? 'opacity-40 cursor-not-allowed border-white/5' : 'hover:border-secondary/50'}`}>
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-secondary/20 rounded-xl text-secondary">
+                  <Icons.Swords />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">部落战</h3>
+                  <p className="text-gray-400 text-sm">{noActivity ? '当前无进行中的部落战' : activities.leagueActive ? '联赛进行中，不可用' : '查看当前部落战详情和对位分析'}</p>
+                </div>
+              </div>
+            </button>
 
-        <button onClick={() => handleViewLeague(selectedClan)} className="card hover:border-success/50 transition-all text-left">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-success/20 rounded-xl text-success">
-              <Icons.Trophy />
-            </div>
-            <div>
-              <h3 className="font-bold text-lg">联赛</h3>
-              <p className="text-gray-400 text-sm">查看联赛对阵和进攻对位差</p>
-            </div>
-          </div>
-        </button>
+            <button onClick={() => handleViewLeague(selectedClan)} disabled={leagueDisabled} className={`card text-left transition-all ${leagueDisabled ? 'opacity-40 cursor-not-allowed border-white/5' : 'hover:border-success/50'}`}>
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-success/20 rounded-xl text-success">
+                  <Icons.Trophy />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">联赛</h3>
+                  <p className="text-gray-400 text-sm">{noActivity ? '当前无进行中的联赛' : activities.warActive ? '部落战进行中，不可用' : '查看联赛对阵和进攻对位差'}</p>
+                </div>
+              </div>
+            </button>
+          </>)
+        })()}
       </div>
 
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <span className="text-primary"><Icons.Users /></span>
-            成员列表
-          </h2>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-400 text-sm">排序:</span>
-            <select 
-              value={memberSort.field} 
-              onChange={(e) => setMemberSort({ ...memberSort, field: e.target.value })}
-              className="bg-dark/50 border border-white/20 rounded-lg px-3 py-1 text-sm text-white"
-            >
-              <option value="role">职位</option>
-              <option value="level">等级</option>
-              <option value="trophies">杯数</option>
-              <option value="donations">捐兵</option>
-            </select>
-            <button 
-              onClick={() => setMemberSort({ ...memberSort, order: memberSort.order === 'desc' ? 'asc' : 'desc' })}
-              className="p-1.5 bg-dark/50 border border-white/20 rounded-lg text-gray-400 hover:text-white transition-all"
-              title={memberSort.order === 'desc' ? '降序' : '升序'}
-            >
-              {memberSort.order === 'desc' ? '↓' : '↑'}
-            </button>
-          </div>
-        </div>
-
+        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+          <span className="text-primary"><Icons.Users /></span>
+          成员列表
+        </h2>
         <div className="overflow-x-auto">
           <table>
             <thead>
               <tr className="border-b border-white/10">
-                <th className="text-left py-3 px-4 text-gray-400 font-medium">玩家</th>
-                <th className="text-left py-3 px-4 text-gray-400 font-medium">职位</th>
-                <th className="text-center py-3 px-4 text-gray-400 font-medium">等级</th>
-                <th className="text-right py-3 px-4 text-gray-400 font-medium">杯数</th>
-                <th className="text-right py-3 px-4 text-gray-400 font-medium">捐兵/收兵</th>
-              </tr>
+                  <th className="text-left py-3 px-4 text-gray-400 font-medium">玩家</th>
+                  <th className="text-left py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'role', order: memberSort.field === 'role' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                    职位 {memberSort.field === 'role' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
+                  <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'level', order: memberSort.field === 'level' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                    等级 {memberSort.field === 'level' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
+                  <th className="text-right py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'trophies', order: memberSort.field === 'trophies' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                    杯数 {memberSort.field === 'trophies' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
+                  <th className="text-right py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setMemberSort({ field: 'donations', order: memberSort.field === 'donations' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                    捐兵/收兵 {memberSort.field === 'donations' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
+                </tr>
             </thead>
             <tbody>
               {sortMembers(clanData.memberList).map((member, index) => (<tr key={member.tag} onClick={() => handleViewPlayer(member.tag)} className="border-b border-white/5 hover:bg-white/5 transition-all cursor-pointer">
@@ -1183,8 +1205,8 @@ function App() {
     const opponent = isOurClan ? warData.opponent : warData.clan
 
     return (<main className="container mx-auto px-4 py-8">
-      <button onClick={() => setCurrentView('clan-detail')} className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-all">
-        <Icons.ArrowLeft /> 返回部落详情
+      <button onClick={() => setCurrentView(clanData ? 'clan-detail' : 'home')} className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-all">
+        <Icons.ArrowLeft /> {clanData ? '返回部落详情' : '返回首页'}
       </button>
 
       <div className="card mb-6">
@@ -1271,8 +1293,8 @@ function App() {
           <span className="text-gray-600 w-16 h-16 mx-auto mb-4 block"><Icons.Trophy /></span>
           <h2 className="text-2xl font-bold mb-2">当前未在联赛中</h2>
           <p className="text-gray-400 mb-6">该部落目前没有进行中的联赛</p>
-          <button onClick={() => setCurrentView('clan-detail')} className="btn-primary">
-            返回部落详情
+          <button onClick={() => setCurrentView(clanData ? 'clan-detail' : 'home')} className="btn-primary">
+            {clanData ? '返回部落详情' : '返回首页'}
           </button>
         </div>
       </main>)
@@ -1295,9 +1317,10 @@ function App() {
     const totalDestruction = ourWars.length > 0
       ? ourWars.reduce((sum, w) => sum + (w.ourClan?.destructionPercentage || 0), 0) / ourWars.length
       : 0
-    const wins = ourWars.filter(w => (w.ourClan?.stars || 0) > (w.opponent?.stars || 0)).length
-    const losses = ourWars.filter(w => (w.ourClan?.stars || 0) < (w.opponent?.stars || 0)).length
-    const draws = ourWars.filter(w => (w.ourClan?.stars || 0) === (w.opponent?.stars || 0)).length
+    const finishedWars = ourWars.filter(w => w.state !== 'preparation')
+    const wins = finishedWars.filter(w => (w.ourClan?.stars || 0) > (w.opponent?.stars || 0)).length
+    const losses = finishedWars.filter(w => (w.ourClan?.stars || 0) < (w.opponent?.stars || 0)).length
+    const draws = finishedWars.filter(w => (w.ourClan?.stars || 0) === (w.opponent?.stars || 0)).length
 
     const playerStats = {}
     const totalRounds = ourWars.length
@@ -1305,6 +1328,7 @@ function App() {
       const isOurClan = war.clan?.tag === ourClanTag
       const ourClanData = isOurClan ? war.clan : war.opponent
       const members = ourClanData?.members || []
+      const isActiveOrEnded = war.state !== 'preparation'
       members.forEach(member => {
         if (!playerStats[member.tag]) {
           playerStats[member.tag] = {
@@ -1315,7 +1339,11 @@ function App() {
             totalAttacks: 0,
             totalDestruction: 0,
             warsParticipated: 0,
+            totalAppearances: 0,
           }
+        }
+        if (isActiveOrEnded) {
+          playerStats[member.tag].totalAppearances += 1
         }
         const attacks = member.attacks || []
         if (attacks.length > 0) {
@@ -1328,11 +1356,25 @@ function App() {
         })
       })
     })
-    const playerList = Object.values(playerStats).sort((a, b) => b.totalStars - a.totalStars || a.mapPosition - b.mapPosition)
+    const playerList = Object.values(playerStats).sort((a, b) => {
+      let diff = 0
+      if (leagueSort.field === 'totalStars') {
+        diff = a.totalStars - b.totalStars
+      } else if (leagueSort.field === 'attackRate') {
+        const rateA = a.totalAppearances > 0 ? a.warsParticipated / a.totalAppearances : 0
+        const rateB = b.totalAppearances > 0 ? b.warsParticipated / b.totalAppearances : 0
+        diff = rateA - rateB
+      } else if (leagueSort.field === 'avgDestruction') {
+        const avgA = a.totalAttacks > 0 ? a.totalDestruction / a.totalAttacks : 0
+        const avgB = b.totalAttacks > 0 ? b.totalDestruction / b.totalAttacks : 0
+        diff = avgA - avgB
+      }
+      return leagueSort.order === 'desc' ? -diff : diff
+    })
 
     return (<main className="container mx-auto px-4 py-8">
-      <button onClick={() => setCurrentView('clan-detail')} className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-all">
-        <Icons.ArrowLeft /> 返回部落详情
+      <button onClick={() => setCurrentView(clanData ? 'clan-detail' : 'home')} className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-all">
+        <Icons.ArrowLeft /> {clanData ? '返回部落详情' : '返回首页'}
       </button>
 
       <div className="card mb-6">
@@ -1384,9 +1426,15 @@ function App() {
                 <tr className="border-b border-white/10">
                   <th className="text-left py-3 px-4 text-gray-400 font-medium">#</th>
                   <th className="text-left py-3 px-4 text-gray-400 font-medium">玩家</th>
-                  <th className="text-center py-3 px-4 text-gray-400 font-medium">总星级</th>
-                  <th className="text-center py-3 px-4 text-gray-400 font-medium">已进攻场次</th>
-                  <th className="text-center py-3 px-4 text-gray-400 font-medium">平均摧毁率</th>
+                  <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setLeagueSort({ field: 'totalStars', order: leagueSort.field === 'totalStars' && leagueSort.order === 'desc' ? 'asc' : 'desc' })}>
+                    总星级 {leagueSort.field === 'totalStars' ? (leagueSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
+                  <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setLeagueSort({ field: 'attackRate', order: leagueSort.field === 'attackRate' && leagueSort.order === 'desc' ? 'asc' : 'desc' })}>
+                    进攻/上场 {leagueSort.field === 'attackRate' ? (leagueSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
+                  <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setLeagueSort({ field: 'avgDestruction', order: leagueSort.field === 'avgDestruction' && leagueSort.order === 'desc' ? 'asc' : 'desc' })}>
+                    平均摧毁率 {leagueSort.field === 'avgDestruction' ? (leagueSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1404,8 +1452,8 @@ function App() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`font-bold ${p.warsParticipated === totalRounds ? 'text-success' : 'text-danger'}`}>
-                        {p.warsParticipated}/{totalRounds}
+                      <span className={`font-bold ${p.warsParticipated === p.totalAppearances ? 'text-success' : 'text-danger'}`}>
+                        {p.warsParticipated}/{p.totalAppearances}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center font-bold text-success">
