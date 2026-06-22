@@ -669,6 +669,8 @@ function App() {
         diff = a.trophies - b.trophies
       } else if (memberSort.field === 'donations') {
         diff = a.donations - b.donations
+      } else if (memberSort.field === 'donationsReceived') {
+        diff = a.donationsReceived - b.donationsReceived
       }
       return memberSort.order === 'desc' ? -diff : diff
     })
@@ -1140,7 +1142,10 @@ function App() {
                    杯数 {memberSort.field === 'trophies' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
                  </th>
                  <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider cursor-pointer hover:text-white transition-all select-none" onClick={() => setMemberSort({ field: 'donations', order: memberSort.field === 'donations' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
-                   捐兵/收兵 {memberSort.field === 'donations' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                   捐兵 {memberSort.field === 'donations' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
+                 </th>
+                 <th className="text-left py-3 px-3 text-gray-400 font-medium text-xs uppercase tracking-wider cursor-pointer hover:text-white transition-all select-none" onClick={() => setMemberSort({ field: 'donationsReceived', order: memberSort.field === 'donationsReceived' && memberSort.order === 'desc' ? 'asc' : 'desc' })}>
+                   收兵 {memberSort.field === 'donationsReceived' ? (memberSort.order === 'desc' ? '↓' : '↑') : ''}
                  </th>
               </tr>
             </thead>
@@ -1185,11 +1190,10 @@ function App() {
                      </span>
                    </td>
                    <td className="py-2.5 px-3 text-left">
-                     <div className="flex items-center gap-2 text-sm">
-                       <span className="text-primary font-medium">{member.donations.toLocaleString()}</span>
-                       <span className="text-gray-600">/</span>
-                       <span className="text-green-400 font-medium">{member.donationsReceived.toLocaleString()}</span>
-                     </div>
+                     <span className="text-sm font-mono text-primary font-medium">{member.donations.toLocaleString()}</span>
+                   </td>
+                   <td className="py-2.5 px-3 text-left">
+                     <span className="text-sm font-mono text-green-400 font-medium">{member.donationsReceived.toLocaleString()}</span>
                    </td>
                 </tr>
               ))}
