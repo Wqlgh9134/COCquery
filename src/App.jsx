@@ -37,7 +37,7 @@ const NAME_MAP = {
   // 弓箭女皇装备
   'Archer Puppet': '弓箭手木偶', 'Invisibility Vial': '隐形药水瓶', 'Giant Arrow': '巨型箭矢',
   'Healer Puppet': '天使木偶', 'Frozen Arrow': '冰封箭矢', 'Magic Mirror': '克隆魔镜',
-  'Action Figure': '动作人偶', 'Sky Piercing Arrow': '擎天箭矢',
+  'Action Figure': '动作人偶', 'Monolith Arrow': '擎天箭矢',
   // 亡灵王子装备
   'Henchmen Puppet': '护卫玩偶', 'Dark Orb': '暗黑魔球', 'Metal Pants': '铁甲短裤',
   'Noble Iron': '贵族哑铃', 'Dark Crown': '暗黑皇冠', 'Meteor Staff': '陨星法杖',
@@ -157,7 +157,7 @@ const LOCAL_IMAGE_MAP = {
   'Archer Puppet': 'Archer_Puppet_thumb.webp',
   'Invisibility Vial': 'Invisibility_Vial_thumb.webp',
   'Giant Arrow': 'Giant_Arrow_thumb.webp',
-  'Sky Piercing Arrow': '641.webp',
+  'Monolith Arrow': '641.webp',
   'Healer Puppet': 'Healer_Puppet_thumb.webp',
   'Frozen Arrow': 'Frozen_Arrow_thumb.webp',
   'Magic Mirror': 'Magic_Mirror_thumb.webp',
@@ -245,7 +245,7 @@ const HERO_EQUIPMENT_MAP = {
   // 野蛮人之王装备
   'Barbarian King': ['Barbarian Puppet', 'Rage Vial', 'Earthquake Boots', 'Vampstache', 'Giant Gauntlet', 'Spiky Ball', 'Snake Bracelet', 'Stick Horse'],
   // 弓箭女皇装备
-  'Archer Queen': ['Archer Puppet', 'Invisibility Vial', 'Giant Arrow', 'Healer Puppet', 'Frozen Arrow', 'Magic Mirror', 'Action Figure', 'Sky Piercing Arrow'],
+  'Archer Queen': ['Archer Puppet', 'Invisibility Vial', 'Giant Arrow', 'Healer Puppet', 'Frozen Arrow', 'Magic Mirror', 'Action Figure', 'Monolith Arrow'],
   // 亡灵王子装备
   'Minion Prince': ['Henchmen Puppet', 'Dark Orb', 'Metal Pants', 'Noble Iron', 'Dark Crown', 'Meteor Staff'],
   // 大守护者装备
