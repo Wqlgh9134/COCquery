@@ -627,7 +627,7 @@ function App() {
   const [warData, setWarData] = useState(null)
   const [leagueData, setLeagueData] = useState(null)
   const [memberSort, setMemberSort] = useState({ field: 'role', order: 'desc' })
-  const [leagueSort, setLeagueSort] = useState({ field: 'totalStars', order: 'desc' })
+  const [leagueSort, setLeagueSort] = useState({ field: 'rewardRank', order: 'asc' })
   const [clanActivities, setClanActivities] = useState({})
   const [playerData, setPlayerData] = useState(null)
   const [showPlayerModal, setShowPlayerModal] = useState(false)
@@ -1329,11 +1329,20 @@ function App() {
     }
 
     const ourClanTag = selectedClan?.tag
-    const allWars = (leagueData.roundsData || []).flat().filter(war => war && (war.clan?.tag === ourClanTag || war.opponent?.tag === ourClanTag))
+    // 记录真实轮次号：某轮数据缺失时列不会静默左移，label 始终等于联赛第 N 轮
+    const allWars = []
+    ;(leagueData.roundsData || []).forEach((wars, rIdx) => {
+      ;(wars || []).forEach(war => {
+        if (war && (war.clan?.tag === ourClanTag || war.opponent?.tag === ourClanTag)) {
+          allWars.push({ roundNo: rIdx + 1, war })
+        }
+      })
+    })
 
-    const ourWars = allWars.map(war => {
+    const ourWars = allWars.map(({ roundNo, war }) => {
       const isOurClan = war.clan?.tag === ourClanTag
       return {
+        roundNo,
         ourClan: isOurClan ? war.clan : war.opponent,
         opponent: isOurClan ? war.opponent : war.clan,
         state: war.state
@@ -1363,7 +1372,7 @@ function App() {
 
     const playerStats = {}
     const totalRounds = ourWars.length
-    allWars.forEach((war, warIndex) => {
+    allWars.forEach(({ war }, warIndex) => {
       const isOurClan = war.clan?.tag === ourClanTag
       const ourClanData = isOurClan ? war.clan : war.opponent
       const members = ourClanData?.members || []
@@ -1405,6 +1414,222 @@ function App() {
         })
       })
     })
+
+    // ===== 额外奖励评分：有效对位差 =====
+    const REWARD = {
+      starPoint: 5,      // 每颗星折算分值（总分从 0 开始累加）
+      diffBase: 1,       // 每 1 点有效对位差折算分值（线性，无加速）
+      highFailPenalty: { 0: 45, 1: 30, 2: 15 }, // 打高位未满星：按该场星数扣分（3 星不扣，高风险高回报）
+      lowPenalty: 15,    // 主动低打每次额外扣分（对位差负分之外）
+      missedPenalty: 10, // 漏刀每次扣分
+      snipePenalty: 30,  // 补刀每次扣分
+      minAttacks: 5,     // 资格线：最少进攻次数
+      minStars: 15,      // 资格线：最低总星数
+      minDestruction: 70,// 资格线：最低平均摧毁率
+    }
+
+    // 满星线 = 已开打轮次 × 3（准备中的轮次不计）
+    const maxStars = 3 * ourWars.filter(w => w.state !== 'preparation').length
+
+    const rewardMap = {}
+    Object.values(playerStats).forEach(p => {
+      rewardMap[p.tag] = {
+        effDiffSum: 0,                                  // 有效对位差总和
+        rounds: new Array(totalRounds).fill(null),      // 每轮对位结果
+        lowCount: 0,                                    // 主动低打次数
+        lowPenaltySum: 0,                               // 主动低打额外扣分
+        snipeCount: 0,                                  // 补刀违规次数
+        missedCount: 0,                                 // 漏刀次数
+        highStar3: 0,                                   // 打高位三星次数
+        highFailCount: 0,                               // 打高位未满星次数
+        highFailPenalty: 0,                             // 打高位未满星扣分
+        backfillStar3: 0,                               // 补位三星次数
+      }
+    })
+
+    allWars.forEach(({ war }, warIndex) => {
+      const isOurClan = war.clan?.tag === ourClanTag
+      const ourMembers = (isOurClan ? war.clan : war.opponent)?.members || []
+      const oppMembers = (isOurClan ? war.opponent : war.clan)?.members || []
+      if (ourMembers.length === 0 || oppMembers.length === 0) return
+
+      // 号位：游戏内战争地图号位 = 本轮参战成员按 mapPosition 升序排列后的名次
+      // （CWL 返回的 mapPosition 是成员在部落里的位次，取值不连续，不能直接当号位用）
+      const rankByTag = (members) => {
+        const rank = {}
+        ;[...members]
+          .sort((a, b) => (a.mapPosition ?? Number.MAX_SAFE_INTEGER) - (b.mapPosition ?? Number.MAX_SAFE_INTEGER))
+          .forEach((m, i) => { rank[m.tag] = i + 1 })
+        return rank
+      }
+      const ourRankByTag = rankByTag(ourMembers)
+      const oppRankByTag = rankByTag(oppMembers)
+      const oppNameByTag = {}
+      const oppTags = oppMembers.map(m => { oppNameByTag[m.tag] = m.name; return m.tag })
+
+      // 漏刀：已结束轮次中上场却一刀未打
+      if (war.state === 'warEnded') {
+        ourMembers.forEach(m => {
+          if ((m.attacks || []).length === 0 && rewardMap[m.tag]) {
+            rewardMap[m.tag].missedCount += 1
+            rewardMap[m.tag].rounds[warIndex] = { type: 'missed', diff: 0 }
+          }
+        })
+      }
+
+      // 收集本部落全部进攻，按 order 重放
+      const attacks = []
+      ourMembers.forEach(m => (m.attacks || []).forEach(a =>
+        attacks.push({ ...a, attackerTag: m.tag, attackerPos: ourRankByTag[m.tag] })
+      ))
+      attacks.sort((a, b) => (a.order || 0) - (b.order || 0))
+
+      const attacked = new Set()  // 已进攻过的对手（本战争日内累计）
+      attacks.forEach(a => {
+        const rec = rewardMap[a.attackerTag]
+        const defPos = Number(oppRankByTag[a.defenderTag])
+        const atkPos = Number(a.attackerPos)
+        // 补刀：目标已被本部落进攻过
+        const isSnipe = attacked.has(a.defenderTag)
+        const defName = oppNameByTag[a.defenderTag]
+
+        if (rec && Number.isFinite(defPos) && Number.isFinite(atkPos)) {
+          let entry
+          if (isSnipe) {
+            rec.snipeCount += 1
+            entry = { type: 'snipe', diff: 0, atkPos, defPos, defName }
+          } else if (defPos < atkPos) {
+            // 打高位：目标排名高于自己 → 有效对位差为正；但未满星要承担高风险扣分
+            const d = atkPos - defPos
+            const stars = a.stars || 0
+            rec.effDiffSum += d
+            if (stars === 3) {
+              rec.highStar3 += 1
+            } else {
+              const failPenalty = REWARD.highFailPenalty[stars] || 0
+              rec.highFailCount += 1
+              rec.highFailPenalty += failPenalty
+            }
+            entry = { type: 'high', diff: d, atkPos, defPos, defName, stars }
+          } else if (defPos === atkPos) {
+            // 同排名 → 有效对位差为 0（不计入“打高位三星”）
+            entry = { type: 'same', diff: 0, atkPos, defPos, defName }
+          } else {
+            // 打低位：以此刻“可用目标 = 所有对手 - 已进攻过的对手”判断
+            // 严格口径：同排名也视为“有更好选择”，即只要仍有排名不低自己的可用目标，即为主动低打
+            const betterAvailable = oppTags.some(t => !attacked.has(t) && Number(oppRankByTag[t]) <= atkPos)
+            if (betterAvailable) {
+              // 仍有排名不低自己的可用目标未打 → 主动低打，有效对位差为负
+              const d = atkPos - defPos
+              rec.effDiffSum += d
+              rec.lowCount += 1
+              rec.lowPenaltySum += REWARD.lowPenalty
+              entry = { type: 'low', diff: d, atkPos, defPos, defName }
+            } else {
+              // 排名不低自己的可用目标已全部打完 → 被迫补位，不扣分
+              if ((a.stars || 0) === 3) rec.backfillStar3 += 1
+              entry = { type: 'backfill', diff: 0, atkPos, defPos, defName }
+            }
+          }
+          rec.rounds[warIndex] = entry
+        }
+
+        // 最后才把该目标加入“已进攻过的对手”
+        attacked.add(a.defenderTag)
+      })
+    })
+
+    // 汇总星数分、对位修正与扣分（从 0 开始累加，不设上下限）
+    Object.values(playerStats).forEach(p => {
+      const r = rewardMap[p.tag]
+      const baseScore = p.totalStars * REWARD.starPoint
+      const diffCorrection = r.effDiffSum * REWARD.diffBase
+      const highFailPenalty = r.highFailPenalty
+      const lowPenaltySum = r.lowPenaltySum
+      const missedPenalty = r.missedCount * REWARD.missedPenalty
+      const snipePenalty = r.snipeCount * REWARD.snipePenalty
+      const avgDestruction = p.totalAttacks > 0 ? p.totalDestruction / p.totalAttacks : 0
+      const total = baseScore + diffCorrection - highFailPenalty - lowPenaltySum - missedPenalty - snipePenalty
+      // 满星却主动低打 → 不记入奖励名次
+      const lowDisqualified = r.lowCount > 0 && maxStars > 0 && p.totalStars >= maxStars
+      const disqualified = r.snipeCount > 0 || r.missedCount > 0 || lowDisqualified
+      const disqLabel = r.snipeCount > 0 ? '取消资格' : '不发奖励'
+      const disqNote = r.snipeCount > 0 ? `补刀 ${r.snipeCount} 次`
+        : r.missedCount > 0 ? `漏刀 ${r.missedCount} 次`
+        : `满星主动低打 ${r.lowCount} 次`
+      const disqTitle = r.snipeCount > 0 ? `补刀违规 ${r.snipeCount} 次，不发放额外奖励`
+        : r.missedCount > 0 ? `漏刀 ${r.missedCount} 次（每次 -${REWARD.missedPenalty} 分），不发放额外奖励`
+        : `满星却主动低打 ${r.lowCount} 次，不记入奖励名次`
+      p.reward = {
+        ...r,
+        baseScore,
+        diffCorrection,
+        highFailPenalty,
+        lowPenaltySum,
+        missedPenalty,
+        snipePenalty,
+        avgDestruction,
+        total,
+        lowDisqualified,
+        disqualified,
+        disqLabel,
+        disqNote,
+        disqTitle,
+        qualified: !disqualified
+          && p.totalAttacks >= REWARD.minAttacks
+          && (p.totalStars >= REWARD.minStars || avgDestruction >= REWARD.minDestruction),
+        rank: null,
+      }
+    })
+
+    // 补刀违规、漏刀、满星主动低打者不参与额外奖励排序
+    Object.values(playerStats)
+      .filter(p => !p.reward.disqualified)
+      .sort((a, b) => {
+        // 第一优先：总星数，保证满星玩家一定排在非满星玩家之前
+        if (b.totalStars !== a.totalStars) return b.totalStars - a.totalStars
+        // 同为满星/同为 N 星时，再由总分与对位表现决定
+        if (b.reward.total !== a.reward.total) return b.reward.total - a.reward.total
+        if (b.reward.effDiffSum !== a.reward.effDiffSum) return b.reward.effDiffSum - a.reward.effDiffSum
+        if (b.reward.highStar3 !== a.reward.highStar3) return b.reward.highStar3 - a.reward.highStar3
+        if (b.reward.backfillStar3 !== a.reward.backfillStar3) return b.reward.backfillStar3 - a.reward.backfillStar3
+        return b.reward.avgDestruction - a.reward.avgDestruction
+      })
+      .forEach((p, i) => { p.reward.rank = i + 1 })
+
+    // 对位结果简写
+    const rewardRoundLabel = (r) => {
+      if (!r) return '—'
+      if (r.type === 'high') return `+${r.diff}`
+      if (r.type === 'same') return '0'
+      if (r.type === 'backfill') return '补位'
+      if (r.type === 'low') return `${r.diff}`
+      if (r.type === 'snipe') return '补刀'
+      if (r.type === 'missed') return '漏刀'
+      return '—'
+    }
+    const rewardRoundDesc = (r) => {
+      if (!r) return '未上场'
+      const pos = `（自己 #${r.atkPos} → 目标 #${r.defPos} ${r.defName || ''}）`
+      if (r.type === 'high') {
+        const fail = r.stars === 3 ? '' : `，仅 ${r.stars} 星，未满星扣 ${REWARD.highFailPenalty[r.stars] || 0} 分`
+        return `打高位${fail}，有效对位差 +${r.diff}${pos}`
+      }
+      if (r.type === 'same') return `同排名，有效对位差 0${pos}`
+      if (r.type === 'backfill') return `被迫补位，有效对位差 0${pos}`
+      if (r.type === 'low') return `主动低打，有效对位差 ${r.diff}${pos}`
+      if (r.type === 'snipe') return `补刀违规${pos}`
+      if (r.type === 'missed') return '未进攻（漏刀）'
+      return '—'
+    }
+    const rewardDetailTitle = (p) => [
+      `总分 ${p.reward.total.toFixed(1)}`,
+      `星数分 ${p.reward.baseScore}（总星 ${p.totalStars} × ${REWARD.starPoint}）`,
+      `有效对位差总和 ${p.reward.effDiffSum}，修正 ${p.reward.diffCorrection >= 0 ? '+' : ''}${p.reward.diffCorrection.toFixed(1)}`,
+      `补位 ${p.reward.rounds.filter(r => r && r.type === 'backfill').length} 次 · 打高位未满星 ${p.reward.highFailCount} 次（-${p.reward.highFailPenalty} 分） · 主动低打 ${p.reward.lowCount} 次（-${p.reward.lowPenaltySum} 分） · 补刀 ${p.reward.snipeCount} 次 · 漏刀 ${p.reward.missedCount} 次`,
+      ...p.reward.rounds.map((r, ri) => `联赛第${ourWars[ri].roundNo}轮（vs ${ourWars[ri].opponent?.name || '未知'}）：${rewardRoundDesc(r)}`),
+    ].join('\n')
+
     const playerList = Object.values(playerStats).sort((a, b) => {
       let diff = 0
       if (leagueSort.field === 'totalStars') {
@@ -1417,6 +1642,11 @@ function App() {
         const avgA = a.totalAttacks > 0 ? a.totalDestruction / a.totalAttacks : 0
         const avgB = b.totalAttacks > 0 ? b.totalDestruction / b.totalAttacks : 0
         diff = avgA - avgB
+      } else if (leagueSort.field === 'rewardRank') {
+        // 按奖励名次排序（补刀/漏刀无资格者排最后）
+        diff = (a.reward.rank ?? Number.MAX_SAFE_INTEGER) - (b.reward.rank ?? Number.MAX_SAFE_INTEGER)
+      } else if (leagueSort.field === 'rewardScore') {
+        diff = a.reward.total - b.reward.total
       }
       return leagueSort.order === 'desc' ? -diff : diff
     })
@@ -1481,9 +1711,9 @@ function App() {
                 <tr className="border-b border-white/10">
                   <th className="text-left py-3 px-4 text-gray-400 font-medium">#</th>
                   <th className="text-left py-3 px-4 text-gray-400 font-medium">玩家</th>
-                  {ourWars.map((_, ri) => (
-                    <th key={ri} className="text-center py-3 px-4 text-gray-400 font-medium text-[10px] w-7">
-                      {ri + 1}
+                  {ourWars.map((w, ri) => (
+                    <th key={ri} className="text-center py-3 px-4 text-gray-400 font-medium text-[10px] w-7" title={`联赛第 ${w.roundNo} 轮 · vs ${w.opponent?.name || '未知'}`}>
+                      {w.roundNo}
                     </th>
                   ))}
                   <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setLeagueSort({ field: 'totalStars', order: leagueSort.field === 'totalStars' && leagueSort.order === 'desc' ? 'asc' : 'desc' })}>
@@ -1495,6 +1725,10 @@ function App() {
                   <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all" onClick={() => setLeagueSort({ field: 'avgDestruction', order: leagueSort.field === 'avgDestruction' && leagueSort.order === 'desc' ? 'asc' : 'desc' })}>
                     平均摧毁率 {leagueSort.field === 'avgDestruction' ? (leagueSort.order === 'desc' ? '↓' : '↑') : ''}
                   </th>
+                  <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all whitespace-nowrap" onClick={() => setLeagueSort({ field: 'rewardRank', order: leagueSort.field === 'rewardRank' && leagueSort.order === 'asc' ? 'desc' : 'asc' })}>
+                    奖励名次 {leagueSort.field === 'rewardRank' ? (leagueSort.order === 'desc' ? '↓' : '↑') : ''}
+                  </th>
+                  <th className="text-left py-3 px-4 text-gray-400 font-medium whitespace-nowrap">奖励分数详细</th>
                 </tr>
               </thead>
               <tbody>
@@ -1567,6 +1801,49 @@ function App() {
                     <td className="py-3 px-4 text-center font-bold text-success">
                       {p.totalAttacks > 0 ? (p.totalDestruction / p.totalAttacks).toFixed(1) : '0.0'}%
                     </td>
+                    <td className="py-3 px-4 text-center">
+                      {p.reward.disqualified ? (
+                        <span className="inline-flex flex-col items-center leading-tight" title={p.reward.disqTitle}>
+                          <span className="font-bold text-danger text-sm">{p.reward.disqLabel}</span>
+                          <span className="text-[10px] text-gray-500">{p.reward.disqNote}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex flex-col items-center leading-tight" title={p.reward.qualified ? '符合额外奖励资格' : '未达额外奖励资格线（需 ≥5 次进攻且总星 ≥15 或摧毁率 ≥70%）'}>
+                          <span className="font-bold text-primary">{p.reward.total.toFixed(1)}</span>
+                          <span className={`text-[10px] ${p.reward.qualified ? 'text-success' : 'text-gray-500'}`}>
+                            第 {p.reward.rank} 名{p.reward.qualified ? '' : ' · 未达线'}
+                          </span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="text-left whitespace-nowrap" title={rewardDetailTitle(p)}>
+                        <div className="text-[11px] leading-4">
+                          <span className="text-gray-500">星数</span> <span className="text-white font-medium">{p.reward.baseScore}</span>
+                          <span className="text-gray-600 mx-1">·</span>
+                          <span className="text-gray-500">对位</span>{' '}
+                          <span className={p.reward.diffCorrection >= 0 ? 'text-success font-medium' : 'text-danger font-medium'}>
+                            {p.reward.diffCorrection >= 0 ? '+' : ''}{p.reward.diffCorrection.toFixed(1)}
+                          </span>
+                          {p.reward.highFailPenalty > 0 && <><span className="text-gray-600 mx-1">·</span><span className="text-danger">高位失败 -{p.reward.highFailPenalty}</span></>}
+                          {p.reward.lowPenaltySum > 0 && <><span className="text-gray-600 mx-1">·</span><span className="text-danger">低打 -{p.reward.lowPenaltySum}</span></>}
+                          {p.reward.missedPenalty > 0 && <><span className="text-gray-600 mx-1">·</span><span className="text-danger">漏刀 -{p.reward.missedPenalty}</span></>}
+                          {p.reward.snipePenalty > 0 && <><span className="text-gray-600 mx-1">·</span><span className="text-danger font-bold">补刀 -{p.reward.snipePenalty}</span></>}
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">
+                          {p.reward.rounds.map((r, ri) => (
+                            <span key={ri} className={`mr-1.5 ${
+                              !r ? ''
+                                : r.type === 'snipe' || r.type === 'low' ? 'text-danger'
+                                : r.type === 'high' ? (r.stars === 3 ? 'text-success' : 'text-secondary')
+                                : ''
+                            }`}>
+                              {ourWars[ri].roundNo}:{rewardRoundLabel(r)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1584,7 +1861,7 @@ function App() {
               <div key={index} className="bg-dark/50 rounded-xl p-4 border border-white/10">
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="text-gray-500 text-sm">第 {index + 1} 场</span>
+                    <span className="text-gray-500 text-sm">第 {war.roundNo} 场</span>
                     <span className="font-medium">{war.ourClan?.name}</span>
                     <span className="text-gray-500">vs</span>
                     <span className="font-medium">{war.opponent?.name}</span>
