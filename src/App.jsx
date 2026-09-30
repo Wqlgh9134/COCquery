@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 
 const BASE_URL = '/api/v1'
 
@@ -628,6 +628,8 @@ function App() {
   const [leagueData, setLeagueData] = useState(null)
   const [memberSort, setMemberSort] = useState({ field: 'role', order: 'desc' })
   const [leagueSort, setLeagueSort] = useState({ field: 'rewardRank', order: 'asc' })
+  const [warSort, setWarSort] = useState({ field: 'totalStars', order: 'desc' })
+  const [expandedWarPlayers, setExpandedWarPlayers] = useState([])
   const [clanActivities, setClanActivities] = useState({})
   const [playerData, setPlayerData] = useState(null)
   const [showPlayerModal, setShowPlayerModal] = useState(false)
@@ -939,7 +941,7 @@ function App() {
   }
 
   const getWarStatus = (status) => {
-    const statuses = { 'notInWar': '未在战争中', 'inWar': '战争中', 'collectionDay': '准备日', 'warEnded': '战争已结束' }
+    const statuses = { 'notInWar': '未在战争中', 'inWar': '战争中', 'preparation': '准备日', 'collectionDay': '准备日', 'warEnded': '战争已结束' }
     return statuses[status] || status
   }
 
@@ -1215,7 +1217,7 @@ function App() {
       </main>)
     }
 
-    if (!warData || warData.status === 'notInWar') {
+    if (!warData || warData.state === 'notInWar' || !warData.clan || !warData.opponent) {
       return (<main className="container mx-auto px-4 py-8">
         <button onClick={() => setCurrentView('home')} className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-all">
           <Icons.ArrowLeft /> 返回首页
@@ -1232,6 +1234,58 @@ function App() {
     const ourClan = isOurClan ? warData.clan : warData.opponent
     const opponent = isOurClan ? warData.opponent : warData.clan
 
+    // 对手号位表：用于计算每刀的进攻对位差（号位差 = 自己号位 - 目标号位，正数表示打高位）
+    const opponentByTag = {}
+    ;(opponent.members || []).forEach(m => { opponentByTag[m.tag] = m })
+
+    const attacksPerMember = warData.attacksPerMember || 2
+    const warPlayerStats = (ourClan.members || []).map(m => {
+      const attacks = (m.attacks || []).map(a => {
+        const def = opponentByTag[a.defenderTag]
+        const defPos = def?.mapPosition ?? null
+        const atkPos = m.mapPosition ?? null
+        const diff = (defPos != null && atkPos != null) ? atkPos - defPos : 0
+        return {
+          stars: a.stars || 0,
+          destruction: a.destructionPercentage || 0,
+          defName: def?.name || '未知',
+          defPos,
+          atkPos,
+          diff,
+        }
+      })
+      return {
+        tag: m.tag,
+        name: m.name,
+        mapPosition: m.mapPosition,
+        attacks,
+        attackCount: attacks.length,
+        totalStars: attacks.reduce((s, a) => s + a.stars, 0),
+        totalDestruction: attacks.reduce((s, a) => s + a.destruction, 0),
+        diffSum: attacks.reduce((s, a) => s + a.diff, 0),
+      }
+    })
+
+    const toggleWarSort = (field, defaultOrder = 'desc') => {
+      setWarSort(prev => prev.field === field
+        ? { field, order: prev.order === 'desc' ? 'asc' : 'desc' }
+        : { field, order: defaultOrder })
+    }
+    const toggleWarPlayer = (tag) => {
+      setExpandedWarPlayers(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
+    }
+    const warSortArrow = (field) => warSort.field === field ? (warSort.order === 'desc' ? ' ↓' : ' ↑') : ''
+
+    const warPlayerList = [...warPlayerStats].sort((a, b) => {
+      let diff = 0
+      if (warSort.field === 'totalStars') diff = a.totalStars - b.totalStars
+      else if (warSort.field === 'totalDestruction') diff = a.totalDestruction - b.totalDestruction
+      else if (warSort.field === 'diffSum') diff = a.diffSum - b.diffSum
+      else if (warSort.field === 'attackCount') diff = a.attackCount - b.attackCount
+      else if (warSort.field === 'mapPosition') diff = (a.mapPosition ?? Number.MAX_SAFE_INTEGER) - (b.mapPosition ?? Number.MAX_SAFE_INTEGER)
+      return warSort.order === 'desc' ? -diff : diff
+    })
+
     return (<main className="container mx-auto px-4 py-8">
       <button onClick={() => setCurrentView(clanData ? 'clan-detail' : 'home')} className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-all">
         <Icons.ArrowLeft /> {clanData ? '返回部落详情' : '返回首页'}
@@ -1244,7 +1298,7 @@ function App() {
           </div>
           <div>
             <h1 className="text-2xl font-bold">部落战详情</h1>
-            <p className="text-gray-400 text-sm">{getWarStatus(warData.status)} · {warData.teamSize}人战</p>
+            <p className="text-gray-400 text-sm">{getWarStatus(warData.state)} · {warData.teamSize}人战</p>
           </div>
         </div>
 
@@ -1298,6 +1352,113 @@ function App() {
           </div>
         </div>
       </div>
+
+      {warPlayerList.length > 0 && (<div className="card mb-6">
+        <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+          <span className="text-primary"><Icons.Users /></span>
+          玩家个人数据
+          <span className="text-gray-500 text-xs font-normal">（点击行展开查看两场对战详情）</span>
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-white/10">
+                <th className="py-3 px-3 w-8"></th>
+                <th className="text-left py-3 px-3 text-gray-400 font-medium cursor-pointer hover:text-white transition-all whitespace-nowrap" onClick={() => toggleWarSort('mapPosition', 'asc')}>
+                  号位{warSortArrow('mapPosition')}
+                </th>
+                <th className="text-left py-3 px-4 text-gray-400 font-medium">玩家</th>
+                <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all whitespace-nowrap" onClick={() => toggleWarSort('attackCount')}>
+                  进攻次数{warSortArrow('attackCount')}
+                </th>
+                <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all whitespace-nowrap" onClick={() => toggleWarSort('totalStars')}>
+                  总星数{warSortArrow('totalStars')}
+                </th>
+                <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all whitespace-nowrap" onClick={() => toggleWarSort('totalDestruction')}>
+                  百分比总和{warSortArrow('totalDestruction')}
+                </th>
+                <th className="text-center py-3 px-4 text-gray-400 font-medium cursor-pointer hover:text-white transition-all whitespace-nowrap" onClick={() => toggleWarSort('diffSum')}>
+                  进攻对位差{warSortArrow('diffSum')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {warPlayerList.map((p) => {
+                const expanded = expandedWarPlayers.includes(p.tag)
+                return (
+                  <Fragment key={p.tag}>
+                    <tr onClick={() => toggleWarPlayer(p.tag)} className="border-b border-white/5 hover:bg-white/5 transition-all cursor-pointer">
+                      <td className="py-3 px-3 text-gray-500 text-xs">{expanded ? '▼' : '▶'}</td>
+                      <td className="py-3 px-3 text-gray-500 whitespace-nowrap">#{p.mapPosition}</td>
+                      <td className="py-3 px-4">
+                        <p className="font-medium">{p.name}</p>
+                        <p className="text-gray-400 text-xs font-mono">{p.tag}</p>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`font-bold ${
+                          p.attackCount === attacksPerMember ? 'text-success' : p.attackCount === 0 ? 'text-danger' : 'text-secondary'
+                        }`}>
+                          {p.attackCount}/{attacksPerMember}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="inline-flex items-center gap-1 font-bold text-primary">
+                          <span className="text-secondary"><Icons.Star /></span>
+                          {p.totalStars}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center font-bold text-success">
+                        {p.totalDestruction.toFixed(0)}%
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`font-bold ${p.diffSum > 0 ? 'text-success' : p.diffSum < 0 ? 'text-danger' : 'text-gray-400'}`}>
+                          {p.diffSum > 0 ? '+' : ''}{p.diffSum}
+                        </span>
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr className="border-b border-white/5 bg-dark/30">
+                        <td colSpan={7} className="px-4 py-3">
+                          {p.attacks.length === 0 ? (
+                            <p className="text-gray-500 text-sm">本次部落战未进攻</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {p.attacks.map((a, ai) => (
+                                <div key={ai} className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm">
+                                  <span className="text-gray-500 w-14">第 {ai + 1} 刀</span>
+                                  <span>
+                                    目标 <span className="font-medium text-white">{a.defName}</span>
+                                    {a.defPos != null && <span className="text-gray-500 text-xs ml-1">#{a.defPos}</span>}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-secondary">
+                                    <Icons.Star />{a.stars}
+                                  </span>
+                                  <span className="text-success font-medium">{a.destruction.toFixed(0)}%</span>
+                                  <span className="text-gray-400">
+                                    对位差{' '}
+                                    <span className={`font-bold ${a.diff > 0 ? 'text-success' : a.diff < 0 ? 'text-danger' : 'text-gray-400'}`}>
+                                      {a.diff > 0 ? '+' : ''}{a.diff}
+                                    </span>
+                                    {a.atkPos != null && a.defPos != null && <span className="text-gray-600 text-xs ml-1">（#{a.atkPos} → #{a.defPos}）</span>}
+                                  </span>
+                                </div>
+                              ))}
+                              {p.attackCount < attacksPerMember && (
+                                <p className="text-gray-500 text-sm">剩余 {attacksPerMember - p.attackCount} 次进攻未使用</p>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>)}
+
     </main>)
   }
 
